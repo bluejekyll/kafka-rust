@@ -1,6 +1,10 @@
+use std::io;
 use std::io::{Read, Write};
 
 use std;
+
+use tokio_core::io::{Codec, EasyBuf};
+
 use codecs::{ToByte, FromByte};
 use error::{Result, KafkaCode};
 use utils::PartitionOffset;
@@ -9,8 +13,8 @@ use super::{API_KEY_OFFSET, API_VERSION};
 
 
 #[derive(Debug)]
-pub struct OffsetRequest<'a> {
-    pub header: HeaderRequest<'a>,
+pub struct OffsetRequest<'a, S: AsRef<str>> {
+    pub header: HeaderRequest<S>,
     pub replica: i32,
     pub topic_partitions: Vec<TopicPartitionOffsetRequest<'a>>,
 }
@@ -28,8 +32,8 @@ pub struct PartitionOffsetRequest {
     pub time: i64,
 }
 
-impl<'a> OffsetRequest<'a> {
-    pub fn new(correlation_id: i32, client_id: &'a str) -> OffsetRequest<'a> {
+impl<'a, S: AsRef<str>> OffsetRequest<'a, S> {
+    pub fn new(correlation_id: i32, client_id: S) -> OffsetRequest<'a, S> {
         OffsetRequest {
             header: HeaderRequest::new(API_KEY_OFFSET, API_VERSION, correlation_id, client_id),
             replica: -1,
@@ -49,6 +53,23 @@ impl<'a> OffsetRequest<'a> {
         self.topic_partitions.push(tp);
     }
 }
+
+// struct OffsetRequestCodec
+
+// impl Codec for OffsetRequestCodec {
+//     type In = OffsetRequest<AsRef<str>>;
+//     type Out = OffsetRequest;
+
+//     fn encode(&mut self, msg: Self::Out, buf: &mut Vec<u8>) -> io::Result<()> {
+//         msg.encode(buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))
+//     }
+
+//     fn decode(&mut self, buf: &mut EasyBuf) -> io::Result<Option<Self::In>> {
+
+        
+//         unimplemented!()
+//     }
+//}
 
 impl<'a> TopicPartitionOffsetRequest<'a> {
     pub fn new(topic: &'a str) -> TopicPartitionOffsetRequest<'a> {
@@ -73,7 +94,7 @@ impl PartitionOffsetRequest {
     }
 }
 
-impl<'a> ToByte for OffsetRequest<'a> {
+impl<'a, S: AsRef<str>> ToByte for OffsetRequest<'a, S> {
     fn encode<T: Write>(&self, buffer: &mut T) -> Result<()> {
         try_multi!(self.header.encode(buffer),
                    self.replica.encode(buffer),

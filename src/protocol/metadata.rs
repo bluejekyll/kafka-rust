@@ -7,13 +7,13 @@ use super::{HeaderRequest, HeaderResponse};
 use super::{API_KEY_METADATA, API_VERSION};
 
 #[derive(Debug)]
-pub struct MetadataRequest<'a, T: 'a> {
-    pub header: HeaderRequest<'a>,
+pub struct MetadataRequest<'a, T: 'a, S: AsRef<str>> {
+    pub header: HeaderRequest<S>,
     pub topics: &'a [T],
 }
 
-impl<'a, T: AsRef<str>> MetadataRequest<'a, T> {
-    pub fn new(correlation_id: i32, client_id: &'a str, topics: &'a [T]) -> MetadataRequest<'a, T> {
+impl<'a, T: AsRef<str>, S: AsRef<str>> MetadataRequest<'a, T, S> {
+    pub fn new(correlation_id: i32, client_id: S, topics: &'a [T]) -> MetadataRequest<'a, T, S> {
         MetadataRequest {
             header: HeaderRequest::new(API_KEY_METADATA, API_VERSION, correlation_id, client_id),
             topics: topics,
@@ -21,7 +21,7 @@ impl<'a, T: AsRef<str>> MetadataRequest<'a, T> {
     }
 }
 
-impl<'a, T: AsRef<str> + 'a> ToByte for MetadataRequest<'a, T> {
+impl<'a, T: AsRef<str> + 'a, S: AsRef<str>> ToByte for MetadataRequest<'a, T, S> {
     fn encode<W: Write>(&self, buffer: &mut W) -> Result<()> {
         try_multi!(self.header.encode(buffer), AsStrings(self.topics).encode(buffer))
     }

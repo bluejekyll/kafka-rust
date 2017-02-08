@@ -27,6 +27,10 @@ extern crate flate2;
 #[cfg(feature = "snappy")]
 extern crate snappy;
 
+extern crate futures;
+extern crate tokio_core;
+extern crate tokio_proto;
+
 #[cfg(all(test, feature = "nightly"))]
 extern crate test;
 

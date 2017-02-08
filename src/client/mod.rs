@@ -29,6 +29,7 @@ use client_internals::KafkaClientInternals;
 pub mod metadata;
 mod state;
 mod network;
+mod tokio_network;
 
 // ~ re-export (only) certain types from the protocol::fetch module as
 // 'client::fetch'.
@@ -840,7 +841,7 @@ impl KafkaClient {
 
         // Map topic and partition to the corresponding broker
         let config = &self.config;
-        let mut reqs: HashMap<&str, protocol::OffsetRequest> = HashMap::with_capacity(n_topics);
+        let mut reqs: HashMap<&str, protocol::OffsetRequest<_>> = HashMap::with_capacity(n_topics);
         for topic in topics {
             let topic = topic.as_ref();
             if let Some(ps) = state.partitions_for(topic) {
@@ -1021,7 +1022,7 @@ impl KafkaClient {
         let correlation = state.next_correlation_id();
 
         // Map topic and partition to the corresponding broker
-        let mut reqs: HashMap<&str, protocol::FetchRequest> = HashMap::new();
+        let mut reqs: HashMap<&str, protocol::FetchRequest<_>> = HashMap::new();
         for inp in input {
             let inp = inp.as_ref();
             if let Some(broker) = state.find_broker(inp.topic, inp.partition) {
@@ -1264,7 +1265,7 @@ impl KafkaClientInternals for KafkaClient {
 
         // ~ map topic and partition to the corresponding brokers
         let config = &self.config;
-        let mut reqs: HashMap<&str, protocol::ProduceRequest> = HashMap::new();
+        let mut reqs: HashMap<&str, protocol::ProduceRequest<_>> = HashMap::new();
         for msg in messages {
             let msg = msg.as_ref();
             match state.find_broker(msg.topic, msg.partition) {
@@ -1334,7 +1335,7 @@ fn __get_group_coordinator<'a>(group: &str,
     }
 }
 
-fn __commit_offsets(req: protocol::OffsetCommitRequest,
+fn __commit_offsets<S: AsRef<str>>(req: protocol::OffsetCommitRequest<S>,
                     state: &mut state::ClientState,
                     conn_pool: &mut network::Connections,
                     config: &ClientConfig)
@@ -1393,7 +1394,7 @@ fn __commit_offsets(req: protocol::OffsetCommitRequest,
     }
 }
 
-fn __fetch_group_offsets(req: protocol::OffsetFetchRequest,
+fn __fetch_group_offsets<S: AsRef<str>>(req: protocol::OffsetFetchRequest<S>,
                          state: &mut state::ClientState,
                          conn_pool: &mut network::Connections,
                          config: &ClientConfig)
@@ -1465,9 +1466,9 @@ fn __fetch_group_offsets(req: protocol::OffsetFetchRequest,
 }
 
 /// ~ carries out the given fetch requests and returns the response
-fn __fetch_messages(conn_pool: &mut network::Connections,
+fn __fetch_messages<S: AsRef<str>>(conn_pool: &mut network::Connections,
                     config: &ClientConfig,
-                    reqs: HashMap<&str, protocol::FetchRequest>)
+                    reqs: HashMap<&str, protocol::FetchRequest<S>>)
                     -> Result<Vec<fetch::Response>> {
     let now = Instant::now();
     let mut res = Vec::with_capacity(reqs.len());
@@ -1482,8 +1483,8 @@ fn __fetch_messages(conn_pool: &mut network::Connections,
 }
 
 /// ~ carries out the given produce requests and returns the response
-fn __produce_messages(conn_pool: &mut network::Connections,
-                      reqs: HashMap<&str, protocol::ProduceRequest>,
+fn __produce_messages<S: AsRef<str>>(conn_pool: &mut network::Connections,
+                      reqs: HashMap<&str, protocol::ProduceRequest<S>>,
                       no_acks: bool)
                       -> Result<Vec<ProduceConfirm>> {
     let now = Instant::now();

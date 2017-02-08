@@ -10,16 +10,16 @@ use super::{API_KEY_OFFSET_FETCH, API_KEY_OFFSET_COMMIT, API_KEY_GROUP_COORDINAT
 // --------------------------------------------------------------------
 
 #[derive(Debug)]
-pub struct GroupCoordinatorRequest<'a, 'b> {
-    pub header: HeaderRequest<'a>,
+pub struct GroupCoordinatorRequest<'b, S: AsRef<str>> {
+    pub header: HeaderRequest<S>,
     pub group: &'b str,
 }
 
-impl<'a, 'b> GroupCoordinatorRequest<'a, 'b> {
+impl<'b, S: AsRef<str>> GroupCoordinatorRequest<'b, S> {
     pub fn new(group: &'b str,
                correlation_id: i32,
-               client_id: &'a str)
-               -> GroupCoordinatorRequest<'a, 'b> {
+               client_id: S)
+               -> GroupCoordinatorRequest<'b, S> {
         GroupCoordinatorRequest {
             header: HeaderRequest::new(API_KEY_GROUP_COORDINATOR,
                                        API_VERSION,
@@ -30,7 +30,7 @@ impl<'a, 'b> GroupCoordinatorRequest<'a, 'b> {
     }
 }
 
-impl<'a, 'b> ToByte for GroupCoordinatorRequest<'a, 'b> {
+impl<'b, S: AsRef<str>> ToByte for GroupCoordinatorRequest<'b, S> {
     fn encode<W: Write>(&self, buffer: &mut W) -> Result<()> {
         try_multi!(self.header.encode(buffer), self.group.encode(buffer))
     }
@@ -78,8 +78,8 @@ pub enum OffsetFetchVersion {
 }
 
 #[derive(Debug)]
-pub struct OffsetFetchRequest<'a, 'b, 'c> {
-    pub header: HeaderRequest<'a>,
+pub struct OffsetFetchRequest<'b, 'c, S: AsRef<str>> {
+    pub header: HeaderRequest<S>,
     pub group: &'b str,
     pub topic_partitions: Vec<TopicPartitionOffsetFetchRequest<'c>>,
 }
@@ -95,12 +95,12 @@ pub struct PartitionOffsetFetchRequest {
     pub partition: i32,
 }
 
-impl<'a, 'b, 'c> OffsetFetchRequest<'a, 'b, 'c> {
+impl<'b, 'c, S: AsRef<str>> OffsetFetchRequest<'b, 'c, S> {
     pub fn new(group: &'b str,
                version: OffsetFetchVersion,
                correlation_id: i32,
-               client_id: &'a str)
-               -> OffsetFetchRequest<'a, 'b, 'c> {
+               client_id: S)
+               -> OffsetFetchRequest<'b, 'c, S> {
         OffsetFetchRequest {
             header: HeaderRequest::new(API_KEY_OFFSET_FETCH,
                                        version as i16,
@@ -143,7 +143,7 @@ impl PartitionOffsetFetchRequest {
     }
 }
 
-impl<'a, 'b, 'c> ToByte for OffsetFetchRequest<'a, 'b, 'c> {
+impl<'b, 'c, S: AsRef<str>> ToByte for OffsetFetchRequest<'b, 'c, S> {
     fn encode<W: Write>(&self, buffer: &mut W) -> Result<()> {
         try_multi!(self.header.encode(buffer),
                    self.group.encode(buffer),
@@ -261,8 +261,8 @@ impl OffsetCommitVersion {
 }
 
 #[derive(Debug)]
-pub struct OffsetCommitRequest<'a, 'b> {
-    pub header: HeaderRequest<'a>,
+pub struct OffsetCommitRequest<'b, S: AsRef<str>> {
+    pub header: HeaderRequest<S>,
     pub group: &'b str,
     pub topic_partitions: Vec<TopicPartitionOffsetCommitRequest<'b>>,
 }
@@ -280,12 +280,12 @@ pub struct PartitionOffsetCommitRequest<'a> {
     pub metadata: &'a str,
 }
 
-impl<'a, 'b> OffsetCommitRequest<'a, 'b> {
+impl<'b, S: AsRef<str>> OffsetCommitRequest<'b, S> {
     pub fn new(group: &'b str,
                version: OffsetCommitVersion,
                correlation_id: i32,
-               client_id: &'a str)
-               -> OffsetCommitRequest<'a, 'b> {
+               client_id: S)
+               -> OffsetCommitRequest<'b, S> {
         OffsetCommitRequest {
             header: HeaderRequest::new(API_KEY_OFFSET_COMMIT,
                                        version as i16,
@@ -332,7 +332,7 @@ impl<'a> PartitionOffsetCommitRequest<'a> {
     }
 }
 
-impl<'a, 'b> ToByte for OffsetCommitRequest<'a, 'b> {
+impl<'b, S: AsRef<str>> ToByte for OffsetCommitRequest<'b, S> {
     fn encode<W: Write>(&self, buffer: &mut W) -> Result<()> {
         let v = OffsetCommitVersion::from_protocol(self.header.api_version);
         try!(self.header.encode(buffer));

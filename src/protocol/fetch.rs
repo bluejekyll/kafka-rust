@@ -2,6 +2,7 @@
 
 use std::borrow::Cow;
 use std::io::Write;
+use std::marker::PhantomData;
 use std::mem;
 use std::collections::HashMap;
 use std::hash::BuildHasherDefault;
@@ -23,13 +24,14 @@ use super::to_crc;
 pub type PartitionHasher = BuildHasherDefault<FnvHasher>;
 
 #[derive(Debug)]
-pub struct FetchRequest<'a, 'b> {
-    pub header: HeaderRequest<'a>,
+pub struct FetchRequest<'a, 'b, S: AsRef<str> + 'a> {
+    pub header: HeaderRequest<S>,
     pub replica: i32,
     pub max_wait_time: i32,
     pub min_bytes: i32,
     // topic -> partitions
     pub topic_partitions: HashMap<&'b str, TopicPartitionFetchRequest>,
+    phantom: PhantomData<&'a S>,
 }
 
 #[derive(Debug)]
@@ -44,18 +46,19 @@ pub struct PartitionFetchRequest {
     pub max_bytes: i32,
 }
 
-impl<'a, 'b> FetchRequest<'a, 'b> {
+impl<'a, 'b, S: AsRef<str>> FetchRequest<'a, 'b, S> {
     pub fn new(correlation_id: i32,
-               client_id: &'a str,
+               client_id: S,
                max_wait_time: i32,
                min_bytes: i32)
-               -> FetchRequest<'a, 'b> {
+               -> FetchRequest<'a, 'b, S> {
         FetchRequest {
             header: HeaderRequest::new(API_KEY_FETCH, API_VERSION, correlation_id, client_id),
             replica: -1,
             max_wait_time: max_wait_time,
             min_bytes: min_bytes,
             topic_partitions: HashMap::new(),
+            phantom: PhantomData,
         }
     }
 
@@ -66,7 +69,7 @@ impl<'a, 'b> FetchRequest<'a, 'b> {
             .add(partition, offset, max_bytes)
     }
 
-    pub fn get<'d>(&'a self, topic: &'d str) -> Option<&'a TopicPartitionFetchRequest> {
+    pub fn get<'d>(&self, topic: &'d str) -> Option<&TopicPartitionFetchRequest> {
         self.topic_partitions.get(topic)
     }
 }
@@ -94,7 +97,7 @@ impl PartitionFetchRequest {
     }
 }
 
-impl<'a, 'b> ToByte for FetchRequest<'a, 'b> {
+impl<'a, 'b, S: AsRef<str>> ToByte for FetchRequest<'a, 'b, S> {
     fn encode<W: Write>(&self, buffer: &mut W) -> Result<()> {
         try!(self.header.encode(buffer));
         try!(self.replica.encode(buffer));
@@ -131,15 +134,15 @@ impl PartitionFetchRequest {
 
 // ~ response related -------------------------------------------------
 
-pub struct ResponseParser<'a, 'b, 'c>
-    where 'a: 'c,
+pub struct ResponseParser<'a, 'b, 'c, S: AsRef<str> + 'a>
+    where 'a: 'b,
           'b: 'c
 {
     pub validate_crc: bool,
-    pub requests: Option<&'c FetchRequest<'a, 'b>>,
+    pub requests: Option<&'c FetchRequest<'a, 'b, S>>,
 }
 
-impl<'a, 'b, 'c> super::ResponseParser for ResponseParser<'a, 'b, 'c> {
+impl<'a, 'b, 'c, S: AsRef<str>> super::ResponseParser for ResponseParser<'a, 'b, 'c, S> {
     type T = Response;
     fn parse(&self, response: Vec<u8>) -> Result<Self::T> {
         Response::from_vec(response, self.requests, self.validate_crc)
@@ -180,10 +183,10 @@ pub struct Response {
 impl Response {
     /// Parses a Response from binary data as defined by the
     /// Kafka Protocol.
-    fn from_vec(response: Vec<u8>,
-                reqs: Option<&FetchRequest>,
-                validate_crc: bool)
-                -> Result<Response> {
+    fn from_vec<S: AsRef<str>>(response: Vec<u8>,
+                               reqs: Option<&FetchRequest<S>>,
+                               validate_crc: bool)
+                               -> Result<Response> {
         let slice = unsafe { mem::transmute(&response[..]) };
         let mut r = ZReader::new(slice);
         let correlation_id = try!(r.read_i32());
@@ -220,10 +223,10 @@ pub struct Topic<'a> {
 }
 
 impl<'a> Topic<'a> {
-    fn read(r: &mut ZReader<'a>,
-            reqs: Option<&FetchRequest>,
-            validate_crc: bool)
-            -> Result<Topic<'a>> {
+    fn read<S: AsRef<str>>(r: &mut ZReader<'a>,
+                           reqs: Option<&FetchRequest<S>>,
+                           validate_crc: bool)
+                           -> Result<Topic<'a>> {
         let name = try!(r.read_str());
         let preqs = reqs.and_then(|reqs| reqs.get(name));
         let partitions = array_of!(r, Partition::read(r, preqs, validate_crc));
@@ -478,22 +481,16 @@ mod tests {
     use error::{Error, KafkaCode};
 
     static FETCH1_TXT: &'static str = include_str!("../../test-data/fetch1.txt");
-    static FETCH1_FETCH_RESPONSE_NOCOMPRESSION_K0821: &'static [u8] =
-        include_bytes!("../../test-data/fetch1.mytopic.1p.nocompression.kafka.0821");
-    static FETCH1_FETCH_RESPONSE_SNAPPY_K0821: &'static [u8] =
-        include_bytes!("../../test-data/fetch1.mytopic.1p.snappy.kafka.0821");
+    static FETCH1_FETCH_RESPONSE_NOCOMPRESSION_K0821: &'static [u8] = include_bytes!("../../test-data/fetch1.mytopic.1p.nocompression.kafka.0821");
+    static FETCH1_FETCH_RESPONSE_SNAPPY_K0821: &'static [u8] = include_bytes!("../../test-data/fetch1.mytopic.1p.snappy.kafka.0821");
     #[cfg(feature = "snappy")]
-    static FETCH1_FETCH_RESPONSE_SNAPPY_K0822: &'static [u8] =
-        include_bytes!("../../test-data/fetch1.mytopic.1p.snappy.kafka.0822");
+    static FETCH1_FETCH_RESPONSE_SNAPPY_K0822: &'static [u8] = include_bytes!("../../test-data/fetch1.mytopic.1p.snappy.kafka.0822");
     #[cfg(feature = "gzip")]
-    static FETCH1_FETCH_RESPONSE_GZIP_K0821: &'static [u8] =
-        include_bytes!("../../test-data/fetch1.mytopic.1p.gzip.kafka.0821");
+    static FETCH1_FETCH_RESPONSE_GZIP_K0821: &'static [u8] = include_bytes!("../../test-data/fetch1.mytopic.1p.gzip.kafka.0821");
 
     static FETCH2_TXT: &'static str = include_str!("../../test-data/fetch2.txt");
-    static FETCH2_FETCH_RESPONSE_NOCOMPRESSION_K0900: &'static [u8] =
-        include_bytes!("../../test-data/fetch2.mytopic.nocompression.kafka.0900");
-    static FETCH2_FETCH_RESPONSE_NOCOMPRESSION_INVALID_CRC_K0900: &'static [u8] =
-        include_bytes!("../../test-data/fetch2.mytopic.nocompression.invalid_crc.kafka.0900");
+    static FETCH2_FETCH_RESPONSE_NOCOMPRESSION_K0900: &'static [u8] = include_bytes!("../../test-data/fetch2.mytopic.nocompression.kafka.0900");
+    static FETCH2_FETCH_RESPONSE_NOCOMPRESSION_INVALID_CRC_K0900: &'static [u8] = include_bytes!("../../test-data/fetch2.mytopic.nocompression.invalid_crc.kafka.0900");
 
     fn into_messages<'a>(r: &'a Response) -> Vec<&'a Message<'a>> {
         let mut all_msgs = Vec::new();
@@ -512,9 +509,9 @@ mod tests {
         all_msgs
     }
 
-    fn test_decode_new_fetch_response(msg_per_line: &str,
+    fn test_decode_new_fetch_response<S: AsRef<str>>(msg_per_line: &str,
                                       response: Vec<u8>,
-                                      requests: Option<&FetchRequest>,
+                                      requests: Option<&FetchRequest<S>>,
                                       validate_crc: bool) {
         let resp = Response::from_vec(response, requests, validate_crc);
         let resp = resp.unwrap();
@@ -644,7 +641,7 @@ mod tests {
     fn test_crc_validation() {
         test_decode_new_fetch_response(FETCH2_TXT,
                                        FETCH2_FETCH_RESPONSE_NOCOMPRESSION_K0900.to_owned(),
-                                       None,
+                                       None::<&FetchRequest<&str>>,
                                        true);
 
         // now test the same message but with an invalid crc checksum
@@ -655,11 +652,11 @@ mod tests {
         test_decode_new_fetch_response(
             FETCH2_TXT,
             FETCH2_FETCH_RESPONSE_NOCOMPRESSION_INVALID_CRC_K0900.to_owned(),
-            None,
+            None::<&FetchRequest<&str>>,
             false);
         // 2) with checking the crc ... parsing should fail immediately
         match Response::from_vec(FETCH2_FETCH_RESPONSE_NOCOMPRESSION_INVALID_CRC_K0900.to_owned(),
-                                 None,
+                                 None::<&FetchRequest<&str>>,
                                  true) {
             Ok(_) => panic!("Expected error, but got successful response!"),
             Err(Error::Kafka(KafkaCode::CorruptMessage)) => {}

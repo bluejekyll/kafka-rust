@@ -105,19 +105,15 @@ impl Error {
 // --------------------------------------------------------------------
 
 #[derive(Debug)]
-pub struct HeaderRequest<'a> {
+pub struct HeaderRequest<S: AsRef<str>> {
     pub api_key: i16,
     pub api_version: i16,
     pub correlation_id: i32,
-    pub client_id: &'a str,
+    pub client_id: S,
 }
 
-impl<'a> HeaderRequest<'a> {
-    fn new(api_key: i16,
-           api_version: i16,
-           correlation_id: i32,
-           client_id: &'a str)
-           -> HeaderRequest {
+impl<S: AsRef<str>> HeaderRequest<S> {
+    fn new(api_key: i16, api_version: i16, correlation_id: i32, client_id: S) -> HeaderRequest<S> {
         HeaderRequest {
             api_key: api_key,
             api_version: api_version,
@@ -127,12 +123,12 @@ impl<'a> HeaderRequest<'a> {
     }
 }
 
-impl<'a> ToByte for HeaderRequest<'a> {
+impl<S: AsRef<str>> ToByte for HeaderRequest<S> {
     fn encode<W: Write>(&self, buffer: &mut W) -> Result<()> {
         try_multi!(self.api_key.encode(buffer),
                    self.api_version.encode(buffer),
                    self.correlation_id.encode(buffer),
-                   self.client_id.encode(buffer))
+                   self.client_id.as_ref().encode(buffer))
     }
 }
 

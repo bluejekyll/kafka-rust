@@ -18,8 +18,8 @@ use super::to_crc;
 const MESSAGE_MAGIC_BYTE: i8 = 0;
 
 #[derive(Debug)]
-pub struct ProduceRequest<'a, 'b> {
-    pub header: HeaderRequest<'a>,
+pub struct ProduceRequest<'b, S: AsRef<str>> {
+    pub header: HeaderRequest<S>,
     pub required_acks: i16,
     pub timeout: i32,
     pub topic_partitions: Vec<TopicPartitionProduceRequest<'b>>,
@@ -45,13 +45,13 @@ pub struct MessageProduceRequest<'a> {
     value: Option<&'a [u8]>,
 }
 
-impl<'a, 'b> ProduceRequest<'a, 'b> {
+impl<'b, S: AsRef<str>> ProduceRequest<'b, S> {
     pub fn new(required_acks: i16,
                timeout: i32,
                correlation_id: i32,
-               client_id: &'a str,
+               client_id: S,
                compression: Compression)
-               -> ProduceRequest<'a, 'b> {
+               -> ProduceRequest<'b, S> {
         ProduceRequest {
             header: HeaderRequest::new(API_KEY_PRODUCE, API_VERSION, correlation_id, client_id),
             required_acks: required_acks,
@@ -116,7 +116,7 @@ impl<'a> PartitionProduceRequest<'a> {
     }
 }
 
-impl<'a, 'b> ToByte for ProduceRequest<'a, 'b> {
+impl<'b, S: AsRef<str>> ToByte for ProduceRequest<'b, S> {
     fn encode<W: Write>(&self, buffer: &mut W) -> Result<()> {
         try_multi!(self.header.encode(buffer),
                    self.required_acks.encode(buffer),
