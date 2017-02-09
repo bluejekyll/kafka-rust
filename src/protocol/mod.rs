@@ -18,6 +18,7 @@ pub mod produce;
 pub mod offset;
 pub mod metadata;
 pub mod consumer;
+pub mod transport;
 
 mod zreader;
 pub mod fetch;

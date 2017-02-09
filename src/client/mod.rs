@@ -12,6 +12,9 @@ use std::iter::Iterator;
 use std::mem;
 use std::thread;
 use std::time::{Duration, Instant};
+use tokio_proto::*;
+use tokio_proto::pipeline::ClientProto;
+use tokio_core::io::{Codec as TokioCodec, EasyBuf, Framed, Io};
 
 // pub re-export
 pub use compression::Compression;
@@ -23,6 +26,8 @@ pub use self::network::SecurityConfig;
 use codecs::{ToByte, FromByte};
 use error::{Result, Error, KafkaCode};
 use protocol::{self, ResponseParser};
+use protocol::metadata::{MetadataRequest, MetadataResponse};
+
 
 use client_internals::KafkaClientInternals;
 
@@ -120,6 +125,39 @@ struct ClientConfig {
     // ~ the number of repeated retry attempts; prevents endless
     // repetition of a retry attempt
     retry_max_attempts: u32,
+}
+
+pub struct MetadataCodec;
+
+impl TokioCodec for MetadataCodec {
+    type In = MetadataResponse;
+    type Out = MetadataRequest<String, Vec<String>, String>;
+
+    fn decode(&mut self, buf: &mut EasyBuf) -> std::io::Result<Option<Self::In>> {
+        unimplemented!()
+    }
+
+    fn encode(&mut self, msg: Self::Out, buf: &mut Vec<u8>) -> std::io::Result<()> {
+        unimplemented!()
+    }
+}
+
+/// Connector
+pub struct KafkaClientProtocol {
+    config: ClientConfig,
+}
+
+pub struct Void;
+
+impl<T: Io + 'static> ClientProto<T> for KafkaClientProtocol {
+    type Request = MetadataRequest<String, Vec<String>, String>;
+    type Response = MetadataResponse;
+    type Transport = Framed<T, MetadataCodec>;
+    type BindTransport = std::io::Result<Self::Transport>;
+
+    fn bind_transport(&self, io: T) -> Self::BindTransport {
+        unimplemented!()
+    }
 }
 
 // --------------------------------------------------------------------
@@ -786,8 +824,8 @@ impl KafkaClient {
 
     /// Fetches metadata about the specified topics from all of the
     /// underlying brokers (`self.hosts`).
-    fn fetch_metadata<T: AsRef<str>>(&mut self,
-                                     topics: &[T])
+    fn fetch_metadata<T: AsRef<str>, A: AsRef<[T]>>(&mut self,
+                                     topics: A)
                                      -> Result<protocol::MetadataResponse> {
         let correlation = self.state.next_correlation_id();
         let now = Instant::now();
@@ -795,8 +833,7 @@ impl KafkaClient {
             debug!("fetch_metadata: requesting metadata from {}", host);
             match self.conn_pool.get_conn(host, now) {
                 Ok(conn) => {
-                    let req =
-                        protocol::MetadataRequest::new(correlation, &self.config.client_id, topics);
+                    let req = protocol::MetadataRequest::new(correlation, &self.config.client_id, &topics);
                     match __send_request(conn, req) {
                         Ok(_) => return __get_response::<protocol::MetadataResponse>(conn),
                         Err(e) => {
@@ -1336,10 +1373,10 @@ fn __get_group_coordinator<'a>(group: &str,
 }
 
 fn __commit_offsets<S: AsRef<str>>(req: protocol::OffsetCommitRequest<S>,
-                    state: &mut state::ClientState,
-                    conn_pool: &mut network::Connections,
-                    config: &ClientConfig)
-                    -> Result<()> {
+                                   state: &mut state::ClientState,
+                                   conn_pool: &mut network::Connections,
+                                   config: &ClientConfig)
+                                   -> Result<()> {
     let mut attempt = 1;
     loop {
         let now = Instant::now();
@@ -1395,10 +1432,10 @@ fn __commit_offsets<S: AsRef<str>>(req: protocol::OffsetCommitRequest<S>,
 }
 
 fn __fetch_group_offsets<S: AsRef<str>>(req: protocol::OffsetFetchRequest<S>,
-                         state: &mut state::ClientState,
-                         conn_pool: &mut network::Connections,
-                         config: &ClientConfig)
-                         -> Result<HashMap<String, Vec<PartitionOffset>>> {
+                                        state: &mut state::ClientState,
+                                        conn_pool: &mut network::Connections,
+                                        config: &ClientConfig)
+                                        -> Result<HashMap<String, Vec<PartitionOffset>>> {
     let mut attempt = 1;
     loop {
         let now = Instant::now();
@@ -1467,9 +1504,9 @@ fn __fetch_group_offsets<S: AsRef<str>>(req: protocol::OffsetFetchRequest<S>,
 
 /// ~ carries out the given fetch requests and returns the response
 fn __fetch_messages<S: AsRef<str>>(conn_pool: &mut network::Connections,
-                    config: &ClientConfig,
-                    reqs: HashMap<&str, protocol::FetchRequest<S>>)
-                    -> Result<Vec<fetch::Response>> {
+                                   config: &ClientConfig,
+                                   reqs: HashMap<&str, protocol::FetchRequest<S>>)
+                                   -> Result<Vec<fetch::Response>> {
     let now = Instant::now();
     let mut res = Vec::with_capacity(reqs.len());
     for (host, req) in reqs {
@@ -1484,9 +1521,9 @@ fn __fetch_messages<S: AsRef<str>>(conn_pool: &mut network::Connections,
 
 /// ~ carries out the given produce requests and returns the response
 fn __produce_messages<S: AsRef<str>>(conn_pool: &mut network::Connections,
-                      reqs: HashMap<&str, protocol::ProduceRequest<S>>,
-                      no_acks: bool)
-                      -> Result<Vec<ProduceConfirm>> {
+                                     reqs: HashMap<&str, protocol::ProduceRequest<S>>,
+                                     no_acks: bool)
+                                     -> Result<Vec<ProduceConfirm>> {
     let now = Instant::now();
     if no_acks {
         for (host, req) in reqs {
